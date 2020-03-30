@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <!--<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">-->
+
+        <title>Rafal's Blog - Solving Sudoku with Dancing Links</title>
+        <link href='http://fonts.googleapis.com/css?family=Noto+Sans:400,700,400italic,700italic' rel='stylesheet' type='text/css' />
+        <link href='http://fonts.googleapis.com/css?family=Merriweather:400,400italic,700,700italic' rel='stylesheet' type='text/css' />
+        <link href='http://fonts.googleapis.com/css?family=Merriweather+Sans:300,400' rel='stylesheet' type='text/css' />
+
+        <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css" rel="stylesheet" />
+
+
+        <link rel="stylesheet" type="text/css" href="/css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="/css/bootstrap-theme.min.css" />
+
+        <link rel="stylesheet" type="text/css" href="/css/syntax.css" />
+        <link rel="stylesheet" type="text/css" href="/css/style.css" />
+
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+        </script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+        <script src="/js/bootstrap.min.js"></script>
+
+        <script type="text/javascript">
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-3063106-9']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+           var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+           ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+           var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+           })();
+       </script>
+
+    </head>
+
+    <body>
+
+      <div class="navbar navbar-static-top navbar-inverse">
+        <div class="container">
+          <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+          </div>
+          <div class="collapse navbar-collapse">
+            <ul class="nav navbar-nav">
+              <li><a href="/">HOME</a></li>
+              <li><a href="/archives.html">ARCHIVES</a></li>
+              <li><a href="/projects.html">PROJECTS</a></li>
+              <li><a href="/about.html">ABOUT</a></li>
+              <li><a href="/contact.html">CONTACT</a></li>
+            </ul>
+          </div><!--/.nav-collapse -->
+        </div>
+      </div>
+
+      <div class="container content">
+        <div class="post_header">
+  <h1>Solving Sudoku with Dancing Links</h1>
+  <h4>Posted on September 26, 2014</h4>
+  <h5>Last updated on October 29, 2014</h5>
+</div>
+
+<div class="post">
+  <p>You would be hard pressed to find to find someone who has not heard of the popular logic game <a href="http://en.wikipedia.org/wiki/Sudoku">Sudoku</a>. You are given a <span class="math inline">\(9 \times 9\)</span> board of <span class="math inline">\(81\)</span> squares logically separated into <span class="math inline">\(9\)</span> columsn, <span class="math inline">\(9\)</span> rows, and <span class="math inline">\(9\)</span> <span class="math inline">\(3 \times 3\)</span> subsquares. The goal is, given a board with some initial numbers filled in, fill in the rest of the board so that every column, row, and subsquare have all the digits from 1 to 9.</p>
+<p>While solving Sudoku is a good brain exercise, we can go one further, write a program to solve Sudokus and henceforth consider all future Sudokus solved. To follow the first part, you should be familiar with basic programming (I’ll be using Java, but it naturally translates to other languages) and the concept of recursion. Part 2, where we introduce the Dancing Links algorithm for solving Sudoku might be slightly more challenging.</p>
+<h1 id="the-simplest-solver">The simplest solver</h1>
+<p>Imagine the simplest most brute-force method of trying to solve a Sudoku puzzle. Take the first empty square, and try putting all the numbers from <span class="math inline">\(1\)</span> to <span class="math inline">\(9\)</span> into it one by one. Start off by putting a <span class="math inline">\(1\)</span> there and move on to the next empty square. Repeat this until you fill in all the squares. At this point, you’ll have a fully filled board, but it might not be a correct board – you have a write a function that checks whether a fully filled Sudoku board is valid. If it is, congratulations, you found a solution! Otherwise, you have to go back (the correct term is <em>backtrack</em>), and try the next possible number in turn for the previously filled in square.</p>
+<h2 id="simplest-solver-java-code">Simplest solver Java code</h2>
+<p>Here is how the above text translates to a piece of Java code. For the rest of this article we’ll use to the convention to use an <code>int[][]</code> to represent a sudoku board, where a <code>0</code> represents an empty value, and numbers <code>1..9</code> represent their respective integers.</p>
+<figure class="code"><div class="sourceCode"><pre class="sourceCode"><code class="sourceCode"><span class="kw">import java.util.Arrays;</span>
+
+<span class="kw">public</span> <span class="kw">class</span> VeryNaiveSudokuSolver{
+    
+    <span class="kw">private</span> <span class="dt">void</span> <span class="fu">solve</span>(<span class="dt">int</span>[][] sudoku, <span class="dt">int</span> idx){
+        <span class="dt">int</span> size = sudoku.<span class="fu">length</span>;
+        <span class="kw">if</span>(idx == size*size){
+            <span class="kw">if</span>(<span class="fu">isSolution</span>(sudoku)){
+                System.<span class="fu">out</span>.<span class="fu">println</span>(<span class="st">&quot;Found a solution via very naive algorithm: &quot;</span>);
+                <span class="fu">printSolution</span>(sudoku);
+                System.<span class="fu">out</span>.<span class="fu">println</span>();
+            }
+        } <span class="kw">else</span>{
+            <span class="dt">int</span> row = idx / size;
+            <span class="dt">int</span> col = idx % size;
+            <span class="kw">if</span>(sudoku[row][col] != <span class="dv">0</span>){ <span class="co">// the square is already filled in, don&#39;t do anything </span>
+                <span class="fu">solve</span>(sudoku,idx<span class="dv">+1</span>);
+            } <span class="kw">else</span>{
+                <span class="kw">for</span>(<span class="dt">int</span> i = <span class="dv">1</span>; i &lt;= <span class="dv">9</span>; i++){
+                    sudoku[row][col] = i;
+                    <span class="fu">solve</span>(sudoku,idx<span class="dv">+1</span>); <span class="co">// continue with the next square</span>
+                    sudoku[row][col] = <span class="dv">0</span>; <span class="co">// unmake move</span>
+                }
+            }
+        }
+    }
+    
+    <span class="co">// Precondition: `sudoku` all contains numbers from 1..9 and is a 9x9 board</span>
+    <span class="co">// Returns true if and only if sudoku is a valid solved sudoku board</span>
+    <span class="kw">private</span> <span class="dt">boolean</span> <span class="fu">isSolution</span>(<span class="dt">int</span>[][] sudoku){
+        <span class="dt">final</span> <span class="dt">int</span> N = <span class="dv">9</span>;
+        <span class="dt">final</span> <span class="dt">int</span> side = <span class="dv">3</span>;
+        <span class="dt">boolean</span>[] mask = <span class="kw">new</span> <span class="dt">boolean</span>[N<span class="dv">+1</span>];
+        
+        <span class="co">// Check rows</span>
+        <span class="kw">for</span>(<span class="dt">int</span> i = <span class="dv">0</span>; i &lt; N; i++){
+            <span class="kw">for</span>(<span class="dt">int</span> j = <span class="dv">0</span>; j &lt; N; j++){
+                <span class="dt">int</span> num = sudoku[i][j];
+                <span class="kw">if</span>(mask[num]) <span class="kw">return</span> <span class="kw">false</span>;
+                mask[num] = <span class="kw">true</span>;
+            }
+            Arrays.<span class="fu">fill</span>(mask,<span class="kw">false</span>);
+        }
+        
+        <span class="co">// Check columns</span>
+        <span class="kw">for</span>(<span class="dt">int</span> i = <span class="dv">0</span>; i &lt; N; i++){
+            <span class="kw">for</span>(<span class="dt">int</span> j = <span class="dv">0</span>; j &lt; N; j++){
+                <span class="dt">int</span> num = sudoku[j][i];
+                <span class="kw">if</span>(mask[num]) <span class="kw">return</span> <span class="kw">false</span>;
+                mask[num] = <span class="kw">true</span>;
+            }
+            Arrays.<span class="fu">fill</span>(mask,<span class="kw">false</span>);
+        }
+        
+        <span class="co">// Check subsquares</span>
+        
+        <span class="kw">for</span>(<span class="dt">int</span> i = <span class="dv">0</span>; i &lt; N; i += side){
+            <span class="kw">for</span>(<span class="dt">int</span> j = <span class="dv">0</span>; j &lt; N; j+= side){
+                Arrays.<span class="fu">fill</span>(mask,<span class="kw">false</span>);
+                <span class="kw">for</span>(<span class="dt">int</span> di = <span class="dv">0</span>; di &lt; side; di++){
+                    <span class="kw">for</span>(<span class="dt">int</span> dj = <span class="dv">0</span>; dj &lt; side; dj++){
+                        <span class="dt">int</span> num = sudoku[i+di][j+dj];
+                        <span class="kw">if</span>(mask[num]) <span class="kw">return</span> <span class="kw">false</span>;
+                    }
+                }
+            }
+        }
+        
+        <span class="kw">return</span> <span class="kw">true</span>; <span class="co">// Everything validated!</span>
+    }
+
+    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">runSolver</span>(<span class="dt">int</span>[][] sudoku){
+        <span class="fu">solve</span>(sudoku,<span class="dv">0</span>);
+    }
+
+}</code></pre></div><figcaption><span>Simplest sudoku solver</span></figcaption></figure>
+<p>The above piece of code is a direct translation of the previous explanation. It goes like this:</p>
+<ol style="list-style-type: decimal">
+<li>Fill the board completely with numbers</li>
+<li>Check if it’s a valid solution</li>
+<li>If there are still boards you haven’t looked at, go back to 1.</li>
+</ol>
+<p>Essentially, this will perform a naive Depth-First-Search (DFS). If the initial board is completely empty, you will in theory go through all the <span class="math inline">\(9^{81}\)</span> board combinations, which is just around the number of all particles in the universe. It will simply never finish! Even if the board is partially filled in with, say, 10 numbers, doing <span class="math inline">\(9^{71}\)</span> computations will not finish either. Hence the code above is only of educational value, and worthless for solving an actual puzzle!</p>
+<h1 id="smarter-sudoku-solving">Smarter Sudoku Solving</h1>
+<p>Consider the naive solver we looked at in the previous section. The problem is that we spend a lot of time exploring solution subspaces that cannot contain a solution! Say you have a sudoku with a <span class="math inline">\(1\)</span> at position <span class="math inline">\((1,1)\)</span>. Then any solution that tries to place a <span class="math inline">\(1\)</span> anywhere in column <code>1</code> or row <code>1</code> cannot possibly be a valid solution since it violates the rules of sudoku.</p>
+<p>Let’s modify our solving algorithm in the following way:</p>
+<ol style="list-style-type: decimal">
+<li>If placing an integer <span class="math inline">\(n\)</span> at position <span class="math inline">\((i,j)\)</span> results in an invalid board state which can’t possibly lead to a solution, abandon this branch of computation.</li>
+<li>Modify the function that checks whether a board is valid to a function that checks whether placing a number <span class="math inline">\(n\)</span> at position <span class="math inline">\((i,j)\)</span> results in a valid board state.</li>
+</ol>
+<p>The modified Java code:</p>
+<figure class="code"><div class="sourceCode"><pre class="sourceCode"><code class="sourceCode"><span class="kw">public</span> <span class="kw">class</span> NaiveSudokuSolver{
+    
+    <span class="kw">private</span> <span class="dt">void</span> <span class="fu">solve</span>(<span class="dt">int</span>[][] board, <span class="dt">int</span> ind){
+        <span class="dt">final</span> <span class="dt">int</span> S = board.<span class="fu">length</span>;
+        <span class="kw">if</span>(ind == S*S){
+            <span class="co">// We&#39;ve definitely reached a solution now</span>
+            System.<span class="fu">out</span>.<span class="fu">println</span>(<span class="st">&quot;Solution via naive algorithm found: &quot;</span>);
+            <span class="fu">printSolution</span>(board);
+            System.<span class="fu">out</span>.<span class="fu">println</span>();
+        }
+        <span class="kw">else</span>{
+            <span class="dt">int</span> row = ind / S;
+            <span class="dt">int</span> col = ind % S;
+            
+            <span class="co">// Advance forward on cells that are prefilled</span>
+            <span class="kw">if</span>(board[row][col] != <span class="dv">0</span>) <span class="fu">solve</span>(board, ind<span class="dv">+1</span>);
+            <span class="kw">else</span>{
+                <span class="co">// we are positioned on something we need to fill in. Try all possibilities</span>
+                <span class="kw">for</span>(<span class="dt">int</span> i = <span class="dv">1</span>; i &lt;= <span class="dv">9</span>; i++){
+                    <span class="kw">if</span>(<span class="fu">consistent</span>(board, row, col, i)){
+                        board[row][col] = i;
+                        <span class="fu">solve</span>(board,ind<span class="dv">+1</span>);
+                        board[row][col] = <span class="dv">0</span>; <span class="co">// unmake move</span>
+                    }   
+                }
+            }
+            <span class="co">// no solution</span>
+        }
+
+    }
+      
+    <span class="co">// Check whether putting &quot;c&quot; into index &quot;ind&quot; leaves the board in a consistent state</span>
+    <span class="kw">private</span> <span class="dt">boolean</span> <span class="fu">consistent</span>(<span class="dt">int</span>[][] board, <span class="dt">int</span> row, <span class="dt">int</span> col, <span class="dt">int</span> c) {        
+        <span class="dt">final</span> <span class="dt">int</span> S = board.<span class="fu">length</span>;
+        <span class="co">// check columns/rows</span>
+        <span class="kw">for</span>(<span class="dt">int</span> i = <span class="dv">0</span>; i &lt; S; i++){
+            <span class="kw">if</span>(board[row][i] == c) <span class="kw">return</span> <span class="kw">false</span>;
+            <span class="kw">if</span>(board[i][col] == c) <span class="kw">return</span> <span class="kw">false</span>;
+        }
+        
+        <span class="co">// Check subsquare</span>
+        
+        <span class="dt">int</span> rowStart = row - row % side; 
+        <span class="dt">int</span> colStart = col - col % side;
+        
+        <span class="kw">for</span>(<span class="dt">int</span> m = <span class="dv">0</span>; m &lt; side; m++){
+            <span class="kw">for</span>(<span class="dt">int</span> k = <span class="dv">0</span>; k &lt; side; k++){
+                <span class="kw">if</span>(board[rowStart + k][colStart + m] == c) <span class="kw">return</span> <span class="kw">false</span>;
+            }
+        }
+        <span class="kw">return</span> <span class="kw">true</span>;
+    }
+
+    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">runSolver</span>(<span class="dt">int</span>[][] sudoku){
+        <span class="fu">solve</span>(sudoku,<span class="dv">0</span>);
+    }
+
+}</code></pre></div><figcaption><span>Naive sudoku solver</span></figcaption></figure>
+<p>This technique will suffice in solving any Sudoku puzzle reasonably fast.</p>
+<h2 id="naive-dfs-algorithm-benchmark">Naive DFS Algorithm Benchmark</h2>
+<p>For benchmarking, Sudoku boards generated by <a href="http://qqwing.com/download.html">qqwing</a> were used. For each difficulty setting (simple, easy, intermediate, expert), 200 boards were randomly generated and then used for benchmarking.</p>
+<p>The table below shows results (in milliseconds).</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="left">Simple</th>
+<th align="left">Easy</th>
+<th align="left">Intermediate</th>
+<th align="left">Expert</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Min</td>
+<td align="left">0.07</td>
+<td align="left">0.11</td>
+<td align="left">0.28</td>
+<td align="left">0.24</td>
+</tr>
+<tr class="even">
+<td align="left">Max</td>
+<td align="left">2039.4</td>
+<td align="left">3112.6</td>
+<td align="left">3071.8</td>
+<td align="left">1326.9</td>
+</tr>
+<tr class="odd">
+<td align="left">Avg</td>
+<td align="left">48.9</td>
+<td align="left">59.6</td>
+<td align="left">44.5</td>
+<td align="left">37.8</td>
+</tr>
+<tr class="even">
+<td align="left">Std</td>
+<td align="left">174.3</td>
+<td align="left">214.7</td>
+<td align="left">214.7</td>
+<td align="left">114.1</td>
+</tr>
+</tbody>
+</table>
+<h1 id="dancing-links">Dancing Links</h1>
+<p><a href="http://www-cs-faculty.stanford.edu/~uno/papers/dancing-color.ps.gz">Dancing Links</a> is an algorithm by Knuth to solve exact cover problems (also called Algorithm X). An exact cover problem, for our purposes, is as follows: given a matrix of ones and zeros, select a subset <span class="math inline">\(S\)</span> of the rows so that each column has exactly one <span class="math inline">\(1\)</span> when looking at just the rows <span class="math inline">\(S\)</span>.</p>
+<p>If you are interested, I really urge you to read the above linked paper. It might come as a surprise (given he is known for writing encyclopedias of computer science), Knuth is a surprisingly readable author and Dancing Links is based on a surprisingly simple idea regarding doubly-linked lists.</p>
+<p>What’s important for us, is that a Sudoku puzzle can be trivially represented as an exact cover problem. Not only that, but many other problems, when suitably expressed as an exact cover problem (for example N-queens), can also be solved using Algorithm X. We just need to write Algorithm X once, and then for any problem in which we are interested in and which can be formulate as an exact cover problem, we just need to implement the translation.</p>
+<p>If you are eager and want to have a look at the code on github, <a href="https://github.com/rafalio/dancing-links-java/">here</a> you go.</p>
+<h2 id="dancing-links-sudoku-benchmark">Dancing Links Sudoku Benchmark</h2>
+<p>We use the same data-set for the benchmark of Dancing Links.</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="left">Simple</th>
+<th align="left">Easy</th>
+<th align="left">Intermediate</th>
+<th align="left">Expert</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Min</td>
+<td align="left">0.86</td>
+<td align="left">0.85</td>
+<td align="left">0.76</td>
+<td align="left">0.75</td>
+</tr>
+<tr class="even">
+<td align="left">Max</td>
+<td align="left">13.71</td>
+<td align="left">3.34</td>
+<td align="left">2.95</td>
+<td align="left">2.54</td>
+</tr>
+<tr class="odd">
+<td align="left">Avg</td>
+<td align="left">1.35</td>
+<td align="left">1.20</td>
+<td align="left">1.04</td>
+<td align="left">1.00</td>
+</tr>
+<tr class="even">
+<td align="left">Std</td>
+<td align="left">1.07</td>
+<td align="left">0.40</td>
+<td align="left">0.30</td>
+<td align="left">0.25</td>
+</tr>
+</tbody>
+</table>
+<p>Solving a board takes on average around a millisecond. As a rough estimate, Dancing Links is around 30-50 faster (including the time to perform the translation and set-up of Dancing Links data structures).</p>
+<p>You might be surprised that as the perceived difficulty from <code>qqwing</code> increased, the solvers seem to perform better. My guess is that this is due to the harder problems presenting more constraints, which are difficult for humans to take into account all at once when solving a Sudoku and causing a lot of back-tracking, are actually easier for a computer – the more logical constraints there are for a fixed number of variables, the quicker a computer will be able to arrive at a solution. If you are interested, I explored a similar idea for the game Hashiwokakero in <a href="http://rafal.io/static/rszymanski_thesis.pdf">my masters thesis</a> along a bunch of other things.</p>
+<h2 id="dancing-links-code">Dancing Links Code</h2>
+<p>Dancing Links is slightly more complex than a simple recursive Depth-First-Search. You won’t find a better way to understand it and implement it than by reading Knuth’s excellent paper.</p>
+<p>If you would prefer to skip to implementation, I have made it available on <a href="https://github.com/rafalio/dancing-links-java/">github</a>. The core of the algorithm is in <code>DancingLinks.java</code>, while the Sudoku-specific implementations are in the rest of the files.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>There is a large amount of optimizations you can do to our naive version to make it faster. They are Sudoku-specific though, and they will not outperform Dancing Links, and moreover cannot be reused for other combinatorial problems of interest. If you are interested in writing a Sudoku solver, I hence highly encourage you to read Knuth’s paper and, more importantly, implement the algorithm in your language of choice. If you have any questions or comments, please don’t hesitate to speak out in the comment section below.</p>
+</div>
+
+<small>Markdown SHA1: 4b1a2906bd9baac48cae12737c1b915a7a377686</small>
+
+
+<hr />
+
+<div id="disqus_thread"></div>
+<script type="text/javascript">
+var disqus_shortname = 'rafal-io'; // required: replace example with your forum shortname
+
+/* * * DON'T EDIT BELOW THIS LINE * * */
+(function() {
+ var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+ dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
+ (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+ })();
+</script>
+
+      </div>
+
+      <div class="footer">
+        <div class="container">
+          <div class="row">
+            <ul>
+              <li>
+              <a href="http://github.com/rafalio">
+                <span class="fa fa-github" />
+              </a>
+              </li>
+              <!--<li>-->
+              <!--<a href="http://uk.linkedin.com/in/szymanskirafal">-->
+                <!--<span class="fa fa-linkedin square" />-->
+              <!--</a>-->
+              <!--</li>-->
+              <li>
+              <a href="http://www.goodreads.com/review/list/6752954-rafal?order=d&shelf=read&sort=date_read">
+                <span class="icon-stack">
+                  <i class="icon-sign-blank icon-stack-base"></i>
+                  <i class="icon-light"><span style="font-family:helvetica;">g</span></i>
+                </span>
+              </a>
+              </li>
+              <li>
+              <a href="http://stackoverflow.com/users/856079/rafal-szymanski">
+                <span class="fa fa-stack-overflow" />
+              </a>
+              </li>
+              <li>
+              <a href="http://news.ycombinator.com/user?id=radicality">
+                <span class="fa fa-hacker-news" />
+              </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+
+    </body>
+</html>

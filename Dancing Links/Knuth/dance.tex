@@ -1,0 +1,654 @@
+\input cwebxmac
+\datethis
+
+\N0 1. Generalized exact cover.
+This program implements the algorithm discussed in my paper about ``dancing
+links.'' I hacked it together from the {\mc XCOVER} program that I wrote in
+1994; I apologize for not having time to apply spit and polish.
+
+Given a matrix whose elements are 0 or 1, the problem is to
+find all subsets of its rows whose sum is at most~1 in all columns and
+{\it exactly\/}~1 in all ``primary'' columns. The matrix is specified
+in the standard input file as follows: Each column has a symbolic name,
+either one or two or three characters long. The first line of input contains
+the names of all primary columns, followed by `\.{\char"7C}', followed by
+the names of all other columns.
+(If all columns are primary, the~`\.{\char"7C}' may be omitted.)
+The remaining lines represent the rows, by listing the columns where 1 appears.
+
+The program prints the number of solutions and the total number of link
+updates. It also prints every $n$th solution, if the integer command
+line argument $n$ is given. A second command-line argument causes the
+full search tree to be printed, and a third argument makes the output
+even more verbose.
+
+\Y\B\D$\\{max\_level}$\5
+$\T{150}$\C{ at most this many rows in a solution }\par
+\B\D$\\{max\_degree}$\5
+$\T{1000}$\C{ at most this many branches per search tree node }\par
+\B\D$\\{max\_cols}$\5
+$\T{10000}$\C{ at most this many columns }\par
+\B\D$\\{max\_nodes}$\5
+$\T{1000000}$\C{ at most this many nonzero elements in the matrix }\par
+\Y\B\8\&\#\&{include}\5
+$\.{<stdio.h>}$\6
+\8\&\#\&{include}\5
+$\.{<ctype.h>}$\6
+\8\&\#\&{include}\5
+$\.{<string.h>}$\6
+$\X3:Type definitions\X$\6
+$\X2:Global variables\X$\7
+$\X6:Subroutines\X$\6
+$;$ $\\{main}(\\{argc},\31\\{argv})\1\1$\6
+$\&{int}~\\{argc};$\6
+$\&{char}~\m*\\{argv}[\,];\2\2$\6
+$\a\{\1\X10:Local variables\X$\6
+$;$\5
+$\\{verbose}\K\\{argc}-\T{1};$\6
+\&{if}~$(\\{verbose})\1$\5
+$\\{sscanf}(\\{argv}[\T{1}],\31\.{"\%d"},\31\m\AND\\{spacing});\2$\6
+$\X7:Initialize the data structures\X$\6
+$;$\5
+$\X12:Backtrack through all solutions\X$\6
+$;$\5
+$\\{printf}(\.{"Altogether\ \%d\ solut\)ions,\ after\ \%.15g\ upd\)ates.\\n"},%
+\31\\{count},\31\\{updates});$\6
+\&{if}~$(\\{verbose})\1$\5
+$\X23:Print a profile of the search tree\X$\2\6
+$;$\5
+$\\{exit}(\T{0});\2$\6
+$\}$\par
+\fi
+
+\M2. \Y\B\4$\X2:Global variables\X\EQ{}$\6
+$\&{int}~\\{verbose};$\C{ $>0$ to show solutions, $>1$ to show partial ones too
+}\6
+$\&{int}~\\{count}\K\T{0};$\C{ number of solutions found so far }\6
+$\&{double}~\\{updates};$\C{ number of times we deleted a list element }\6
+$\&{int}~\\{spacing}\K\T{1};$\C{ if $\\{verbose}$, we output solutions when $%
+\\{count}\MOD\\{spacing}\E\T{0}$ }\6
+$\&{double}~\\{profile}[\\{max\_level}][\\{max\_degree}];$\C{ tree nodes of
+given level and degree }\6
+$\&{double}~\\{upd\_prof}[\\{max\_level}];$\C{ updates at a given level }\6
+$\&{int}~\\{maxb}\K\T{0};$\C{ maximum branching factor actually needed }\6
+$\&{int}~\\{maxl}\K\T{0};$\C{ maximum level actually reached }\par
+\As 8\ET14.
+\U 1.\fi
+
+\N0 3. Data structures.
+Each column of the input matrix is represented by a \&{column} struct,
+and each row is represented as a linked list of \&{node} structs. There's one
+node for each nonzero entry in the matrix.
+
+More precisely, the nodes are linked circularly within each row, in
+both directions. The nodes are also linked circularly within each column;
+the column lists each include a header node, but the row lists do not.
+Column header nodes are part of a \&{column} struct, which
+contains further info about the column.
+
+Each node contains five fields. Four are the pointers of doubly linked lists,
+already mentioned; the fifth points to the column containing the node.
+
+\Y\Y\B\4$\X3:Type definitions\X\EQ{}$\6
+$\&{typedef}~\&{struct}~\\{node\_struct}$\6
+$\a\{\1\&{struct}~\\{node\_struct}~\m*\\{left},\31~\m*\\{right};$\C{
+predecessor and successor in row }\6
+$\&{struct}~\\{node\_struct}~\m*\\{up},\31~\m*\\{down};$\C{ predecessor and
+successor in column }\6
+$\&{struct}~\\{col\_struct}~\m*\\{col};$\C{ the column containing this node }\2%
+\6
+$\}~\&{node};$\par
+\A 4.
+\U 1.\fi
+
+\M4. Each \&{column} struct contains five fields:
+The $\\{head}$ is a node that stands at the head of its list of nodes;
+the $\\{len}$ tells the length of that list of nodes, not counting the header;
+the $\\{name}$ is a one-, two-, or three-letter identifier;
+$\\{next}$ and $\\{prev}$ point to adjacent columns, when this
+column is part of a doubly linked list.
+
+As backtracking proceeds, nodes
+will be deleted from column lists when their row has been blocked by
+other rows in the partial solution.
+But when backtracking is complete, the data structures will be
+restored to their original state.
+
+\Y\B\4$\X3:Type definitions\X\PE{}$\6
+\&{typedef}~\&{struct}~\\{col\_struct}\6
+$\a\{\1\&{node}~\\{head};$\C{ the list header }\6
+$\&{int}~\\{len};$\C{ the number of non-header items currently in this column's
+list }\6
+$\&{char}~\\{name}[\T{8}];$\C{ symbolic identification of the column, for
+printing }\6
+$\&{struct}~\\{col\_struct}~\m*\\{prev},\31~\m*\\{next};$\C{ neighbors of this
+column }\2\6
+$\}~\&{column};$\par
+\fi
+
+\M5. One \&{column} struct is called the root. It serves as the head of the
+list of columns that need to be covered, and is identifiable by the fact
+that its $\\{name}$ is empty.
+
+\Y\B\D$\\{root}$\5
+$\\{col\_array}[\T{0}$]\C{ gateway to the unsettled columns }\par
+\fi
+
+\M6. A row is identified not by name but by the names of the columns it
+contains.
+Here is a routine that prints a row, given a pointer to any of its
+columns. It also prints the position of the row in its column.
+
+\Y\B\4$\X6:Subroutines\X\EQ{}$\6
+$\\{print\_row}( p)\1\1$\6
+$\&{node}~\m* p;\2\2$\6
+$\a\{$\5
+\1$\&{register}~\&{node}~\m* q\K p;$\6
+$\&{register}~\&{int}~ k;$\7
+\&{do}\6
+$\a\{\1\\{printf}(\.{"\ \%s"},\31 q\MG\\{col}\MG\\{name});$\5
+$ q\K q\MG\\{right};\2$\6
+$\}~\&{while}~( q\I p);$\6
+\&{for}~$( q\K p\MG\\{col}\MG\\{head}.\\{down},\31 k\K\T{1};$\5
+$ q\I p;$\5
+$ k\PP)\1$\6
+\&{if}~$( q\E\m\AND( p\MG\\{col}\MG\\{head}))$\6
+$\a\{\1\\{printf}(\.{"\\n"});$\5
+$\&{return};$\C{ row not in its column! }\2\6
+$\}$\5
+\&{else}\1\5
+$ q\K q\MG\\{down};\2$\2\6
+$\\{printf}(\.{"\ (\%d\ of\ \%d)\\n"},\31 k,\31 p\MG\\{col}\MG\\{len});\2$\6
+$\}$\7
+\&{void} $\\{print\_state}$\5
+$(\1\1\1\&{int}~\\{lev}\2\2\2)$\6
+$\a\{\1\&{register}~\&{int}~ l;$\7
+\&{for}~$( l\K\T{0};$\5
+$ l\Z\\{lev};$\5
+$ l\PP)\1$\5
+$\\{print\_row}(\\{choice}[ l]);\2$\2\6
+$\}$\par
+\As 15\ET16.
+\U 1.\fi
+
+\N0 7. Inputting the matrix.
+Brute force is the rule in this part of the program.
+
+\Y\B\4$\X7:Initialize the data structures\X\EQ{}$\6
+$\X9:Read the column names\X$\6
+$;$\5
+$\X11:Read the rows\X$\6
+$;$\par
+\U 1.\fi
+
+\M8. \Y\B\D$\\{buf\_size}$\5
+$\T{4}*\\{max\_cols}+\T{3}$\C{ upper bound on input line length }\par
+\Y\B\4$\X2:Global variables\X\PE{}$\6
+$\&{column}~\\{col\_array}[\\{max\_cols}+\T{2}];$\C{ place for column records }%
+\6
+$\&{node}~\\{node\_array}[\\{max\_nodes}];$\C{ place for nodes }\6
+$\&{char}~\\{buf}[\\{buf\_size}];$\par
+\fi
+
+\M9. \Y\B\D$\\{panic}( m)$\6
+$\a\{$\5
+\1$\\{fprintf}(\\{stderr},\31\.{"\%s!\\n\%s"},\31 m,\31\\{buf});$\5
+$\\{exit}(\m-\T{1});$\5
+\2$\}$\par
+\Y\B\4$\X9:Read the column names\X\EQ{}$\6
+$\\{cur\_col}\K\\{col\_array}+\T{1};$\5
+$\\{fgets}(\\{buf},\31\\{buf\_size},\31\\{stdin});$\6
+\&{if}~$(\\{buf}[\\{strlen}(\\{buf})-\T{1}]\I\.{'\\n'})\1$\5
+$\\{panic}(\.{"Input\ line\ too\ long\)"});\2$\6
+\&{for}~$( p\K\\{buf},\31\\{primary}\K\T{1};$\5
+$\m* p;$\5
+$ p\PP)$\6
+$\a\{\1\&{while}~(\\{isspace}(\m* p))\1$\5
+$ p\PP;\2$\6
+\&{if}~$(\R\m* p)\1$\5
+$\&{break};\2$\6
+\&{if}~$(\m* p\E\.{'|'})$\6
+$\a\{\1\\{primary}\K\T{0};$\6
+\&{if}~$(\\{cur\_col}\E\\{col\_array}+\T{1})\1$\5
+$\\{panic}(\.{"No\ primary\ columns"});\2$\6
+$(\\{cur\_col}-\T{1})\MG\\{next}\K\m\AND\\{root},\31\\{root}.\\{prev}\K\\{cur%
+\_col}-\T{1};$\5
+$\&{continue};\2$\6
+$\}$\6
+\&{for}~$( q\K p+\T{1};$\5
+$\R\\{isspace}(\m* q);$\5
+$ q\PP)\1$\5
+$;\2$\6
+\&{if}~$( q> p+\T{7})\1$\5
+$\\{panic}(\.{"Column\ name\ too\ lon\)g"});\2$\6
+\&{if}~$(\\{cur\_col}\G\m\AND\\{col\_array}[\\{max\_cols}])\1$\5
+$\\{panic}(\.{"Too\ many\ columns"});\2$\6
+\&{for}~$( q\K\\{cur\_col}\MG\\{name};$\5
+$\R\\{isspace}(\m* p);$\5
+$ q\PP,\31 p\PP)\1$\5
+$\m* q\K\m* p;\2$\6
+$\\{cur\_col}\MG\\{head}.\\{up}\K\\{cur\_col}\MG\\{head}.\\{down}\K\m\AND\\{cur%
+\_col}\MG\\{head};$\5
+$\\{cur\_col}\MG\\{len}\K\T{0};$\6
+\&{if}~$(\\{primary})\1$\5
+$\\{cur\_col}\MG\\{prev}\K\\{cur\_col}-\T{1},\31(\\{cur\_col}-\T{1})\MG\\{next}%
+\K\\{cur\_col};\2$\6
+\&{else}\1\5
+$\\{cur\_col}\MG\\{prev}\K\\{cur\_col}\MG\\{next}\K\\{cur\_col};\2$\6
+$\\{cur\_col}\PP;\2$\6
+$\}$\6
+\&{if}~$(\\{primary})$\6
+$\a\{\1\&{if}~(\\{cur\_col}\E\\{col\_array}+\T{1})\1$\5
+$\\{panic}(\.{"No\ primary\ columns"});\2$\6
+$(\\{cur\_col}-\T{1})\MG\\{next}\K\m\AND\\{root},\31\\{root}.\\{prev}\K\\{cur%
+\_col}-\T{1};\2$\6
+$\}$\par
+\U 7.\fi
+
+\M10. \Y\B\4$\X10:Local variables\X\EQ{}$\6
+$\&{register}~\&{column}~\m*\\{cur\_col};$\6
+$\&{register}~\&{char}~\m* p,\31~\m* q;$\6
+$\&{register}~\&{node}~\m*\\{cur\_node};$\6
+$\&{int}~\\{primary};$\par
+\As 13\ET20.
+\U 1.\fi
+
+\M11. \Y\B\4$\X11:Read the rows\X\EQ{}$\6
+$\\{cur\_node}\K\\{node\_array};$\6
+\&{while}~$(\\{fgets}(\\{buf},\31\\{buf\_size},\31\\{stdin}))$\6
+$\a\{\1\&{register}~\&{column}~\m*\\{ccol};$\6
+$\&{register}~\&{node}~\m*\\{row\_start};$\7
+\&{if}~$(\\{buf}[\\{strlen}(\\{buf})-\T{1}]\I\.{'\\n'})\1$\5
+$\\{panic}(\.{"Input\ line\ too\ long\)"});\2$\6
+$\\{row\_start}\K\NULL;$\6
+\&{for}~$( p\K\\{buf};$\5
+$\m* p;$\5
+$ p\PP)$\6
+$\a\{\1\&{while}~(\\{isspace}(\m* p))\1$\5
+$ p\PP;\2$\6
+\&{if}~$(\R\m* p)\1$\5
+$\&{break};\2$\6
+\&{for}~$( q\K p+\T{1};$\5
+$\R\\{isspace}(\m* q);$\5
+$ q\PP)\1$\5
+$;\2$\6
+\&{if}~$( q> p+\T{7})\1$\5
+$\\{panic}(\.{"Column\ name\ too\ lon\)g"});\2$\6
+\&{for}~$( q\K\\{cur\_col}\MG\\{name};$\5
+$\R\\{isspace}(\m* p);$\5
+$ q\PP,\31 p\PP)\1$\5
+$\m* q\K\m* p;\2$\6
+$\m* q\K\.{'\\0'};$\6
+\&{for}~$(\\{ccol}\K\\{col\_array};$\5
+$\\{strcmp}(\\{ccol}\MG\\{name},\31\\{cur\_col}\MG\\{name});$\5
+$\\{ccol}\PP)\1$\5
+$;\2$\6
+\&{if}~$(\\{ccol}\E\\{cur\_col})\1$\5
+$\\{panic}(\.{"Unknown\ column\ name\)"});\2$\6
+\&{if}~$(\\{cur\_node}\E\m\AND\\{node\_array}[\\{max\_nodes}])\1$\5
+$\\{panic}(\.{"Too\ many\ nodes"});\2$\6
+\&{if}~$(\R\\{row\_start})\1$\5
+$\\{row\_start}\K\\{cur\_node};\2$\6
+\&{else}\1\5
+$\\{cur\_node}\MG\\{left}\K\\{cur\_node}-\T{1},\31(\\{cur\_node}-\T{1})\MG%
+\\{right}\K\\{cur\_node};\2$\6
+$\\{cur\_node}\MG\\{col}\K\\{ccol};$\5
+$\\{cur\_node}\MG\\{up}\K\\{ccol}\MG\\{head}.\\{up},\31\\{ccol}\MG\\{head}.%
+\\{up}\MG\\{down}\K\\{cur\_node};$\5
+$\\{ccol}\MG\\{head}.\\{up}\K\\{cur\_node},\31\\{cur\_node}\MG\\{down}\K\m\AND%
+\\{ccol}\MG\\{head};$\5
+$\\{ccol}\MG\\{len}\PP;$\5
+$\\{cur\_node}\PP;\2$\6
+$\}$\6
+\&{if}~$(\R\\{row\_start})\1$\5
+$\\{panic}(\.{"Empty\ row"});\2$\6
+$\\{row\_start}\MG\\{left}\K\\{cur\_node}-\T{1},\31(\\{cur\_node}-\T{1})\MG%
+\\{right}\K\\{row\_start};\2$\6
+$\}$\par
+\U 7.\fi
+
+\N0 12. Backtracking.
+Our strategy for generating all exact covers will be to repeatedly
+choose always the column that appears to be hardest to cover, namely the
+column with shortest list, from all columns that still need to be covered.
+And we explore all possibilities via depth-first search.
+
+The neat part of this algorithm is the way the lists are maintained.
+Depth-first search means last-in-first-out maintenance of data structures;
+and it turns out that we need no auxiliary tables to undelete elements from
+lists when backing up. The nodes removed from doubly linked lists remember
+their former neighbors, because we do no garbage collection.
+
+The basic operation is ``covering a column.'' This means removing it
+from the list of columns needing to be covered, and ``blocking'' its
+rows: removing nodes from other lists whenever they belong to a row of
+a node in this column's list.
+
+\Y\B\4$\X12:Backtrack through all solutions\X\EQ{}$\6
+$\\{level}\K\T{0};$\6\4
+$\\{forward}$:\5
+$\X19:Set $\\{best\_col}$ to the best column for branching\X$\6
+$;$\5
+$\\{cover}(\\{best\_col});$\5
+$\\{cur\_node}\K\\{choice}[\\{level}]\K\\{best\_col}\MG\\{head}.\\{down};$\6\4
+$\\{advance}$:\6
+\&{if}~$(\\{cur\_node}\E\m\AND(\\{best\_col}\MG\\{head}))\1$\5
+$\&{goto}~\\{backup};\2$\6
+\&{if}~$(\\{verbose}>\T{1})$\6
+$\a\{\1\\{printf}(\.{"L\%d:"},\31\\{level});$\5
+$\\{print\_row}(\\{cur\_node});\2$\6
+$\}$\6
+$\X17:Cover all other columns of $\\{cur\_node}$\X$\6
+$;$\6
+\&{if}~$(\\{root}.\\{next}\E\m\AND\\{root})\1$\5
+$\X21:Record solution and $\&{goto}~\\{recover}$\X$\2\6
+$;$\5
+$\\{level}\PP;$\5
+$\&{goto}~\\{forward};$\6\4
+$\\{backup}$:\5
+$\\{uncover}(\\{best\_col});$\6
+\&{if}~$(\\{level}\E\T{0})\1$\5
+$\&{goto}~\\{done};\2$\6
+$\\{level}\MM;$\5
+$\\{cur\_node}\K\\{choice}[\\{level}];$\5
+$\\{best\_col}\K\\{cur\_node}\MG\\{col};$\6\4
+$\\{recover}$:\5
+$\X18:Uncover all other columns of $\\{cur\_node}$\X$\6
+$;$\5
+$\\{cur\_node}\K\\{choice}[\\{level}]\K\\{cur\_node}\MG\\{down};$\5
+$\&{goto}~\\{advance};$\6\4
+$\\{done}$:\6
+\&{if}~$(\\{verbose}>\T{3})\1$\5
+$\X22:Print column lengths, to make sure everything has been restored\X$\2\6
+$;$\par
+\U 1.\fi
+
+\M13. \Y\B\4$\X10:Local variables\X\PE{}$\6
+$\&{register}~\&{column}~\m*\\{best\_col};$\C{ column chosen for branching }\6
+$\&{register}~\&{node}~\m*\\{pp};$\C{ traverses a row }\par
+\fi
+
+\M14. \Y\B\4$\X2:Global variables\X\PE{}$\6
+$\&{int}~\\{level};$\C{ number of choices in current partial solution }\6
+$\&{node}~\m*\\{choice}[\\{max\_level}];$\C{ the row and column chosen on each
+level }\par
+\fi
+
+\M15. When a row is blocked, it leaves all lists except the list of the
+column that is being covered. Thus a node is never removed from a list
+twice.
+
+\Y\B\4$\X6:Subroutines\X\PE{}$\6
+$\\{cover}( c)\1\1$\6
+$\&{column}~\m* c;\2\2$\6
+$\a\{$\5
+\1$\&{register}~\&{column}~\m* l,\31~\m* r;$\6
+$\&{register}~\&{node}~\m*\\{rr},\31~\m*\\{nn},\31~\m*\\{uu},\31~\m*\\{dd};$\6
+$\&{register}~ k\K\T{1};$\C{ updates }\7
+$ l\K c\MG\\{prev};$\5
+$ r\K c\MG\\{next};$\5
+$ l\MG\\{next}\K r;$\5
+$ r\MG\\{prev}\K l;$\6
+\&{for}~$(\\{rr}\K c\MG\\{head}.\\{down};$\5
+$\\{rr}\I\m\AND( c\MG\\{head});$\5
+$\\{rr}\K\\{rr}\MG\\{down})\1$\6
+\&{for}~$(\\{nn}\K\\{rr}\MG\\{right};$\5
+$\\{nn}\I\\{rr};$\5
+$\\{nn}\K\\{nn}\MG\\{right})$\6
+$\a\{\1\\{uu}\K\\{nn}\MG\\{up};$\5
+$\\{dd}\K\\{nn}\MG\\{down};$\5
+$\\{uu}\MG\\{down}\K\\{dd};$\5
+$\\{dd}\MG\\{up}\K\\{uu};$\5
+$ k\PP;$\5
+$\\{nn}\MG\\{col}\MG\\{len}\MM;\2$\6
+$\}$\2\6
+$\\{updates}\KK+ k;$\5
+$\\{upd\_prof}[\\{level}]\KK+ k;\2$\6
+$\}$\par
+\fi
+
+\M16. Uncovering is done in precisely the reverse order. The pointers thereby
+execute an exquisitely choreo\-graphed dance which returns them almost
+magically to their former state.
+
+\Y\B\4$\X6:Subroutines\X\PE{}$\6
+$\\{uncover}( c)\1\1$\6
+$\&{column}~\m* c;\2\2$\6
+$\a\{$\5
+\1$\&{register}~\&{column}~\m* l,\31~\m* r;$\6
+$\&{register}~\&{node}~\m*\\{rr},\31~\m*\\{nn},\31~\m*\\{uu},\31~\m*\\{dd};$\7
+\&{for}~$(\\{rr}\K c\MG\\{head}.\\{up};$\5
+$\\{rr}\I\m\AND( c\MG\\{head});$\5
+$\\{rr}\K\\{rr}\MG\\{up})\1$\6
+\&{for}~$(\\{nn}\K\\{rr}\MG\\{left};$\5
+$\\{nn}\I\\{rr};$\5
+$\\{nn}\K\\{nn}\MG\\{left})$\6
+$\a\{\1\\{uu}\K\\{nn}\MG\\{up};$\5
+$\\{dd}\K\\{nn}\MG\\{down};$\5
+$\\{uu}\MG\\{down}\K\\{dd}\MG\\{up}\K\\{nn};$\5
+$\\{nn}\MG\\{col}\MG\\{len}\PP;\2$\6
+$\}$\2\6
+$ l\K c\MG\\{prev};$\5
+$ r\K c\MG\\{next};$\5
+$ l\MG\\{next}\K r\MG\\{prev}\K c;\2$\6
+$\}$\par
+\fi
+
+\M17. \Y\B\4$\X17:Cover all other columns of $\\{cur\_node}$\X\EQ{}$\6
+\&{for}~$(\\{pp}\K\\{cur\_node}\MG\\{right};$\5
+$\\{pp}\I\\{cur\_node};$\5
+$\\{pp}\K\\{pp}\MG\\{right})\1$\5
+$\\{cover}(\\{pp}\MG\\{col});\2$\par
+\U 12.\fi
+
+\M18. We included $\\{left}$ links, thereby making the rows doubly linked, so
+that columns would be uncovered in the correct LIFO order in this
+part of the program. (The $\\{uncover}$ routine itself could have done its
+job with $\\{right}$ links only.) (Think about it.)
+
+\Y\B\4$\X18:Uncover all other columns of $\\{cur\_node}$\X\EQ{}$\6
+\&{for}~$(\\{pp}\K\\{cur\_node}\MG\\{left};$\5
+$\\{pp}\I\\{cur\_node};$\5
+$\\{pp}\K\\{pp}\MG\\{left})\1$\5
+$\\{uncover}(\\{pp}\MG\\{col});\2$\par
+\U 12.\fi
+
+\M19. \Y\B\4$\X19:Set $\\{best\_col}$ to the best column for branching\X\EQ{}$\6
+$\\{minlen}\K\\{max\_nodes};$\6
+\&{if}~$(\\{verbose}>\T{2})\1$\5
+$\\{printf}(\.{"Level\ \%d:"},\31\\{level});\2$\6
+\&{for}~$(\\{cur\_col}\K\\{root}.\\{next};$\5
+$\\{cur\_col}\I\m\AND\\{root};$\5
+$\\{cur\_col}\K\\{cur\_col}\MG\\{next})$\6
+$\a\{\1\&{if}~(\\{verbose}>\T{2})\1$\5
+$\\{printf}(\.{"\ \%s(\%d)"},\31\\{cur\_col}\MG\\{name},\31\\{cur\_col}\MG%
+\\{len});\2$\6
+\&{if}~$(\\{cur\_col}\MG\\{len}<\\{minlen})\1$\5
+$\\{best\_col}\K\\{cur\_col},\31\\{minlen}\K\\{cur\_col}\MG\\{len};\2$\2\6
+$\}$\6
+\&{if}~$(\\{verbose})$\6
+$\a\{\1\&{if}~(\\{level}>\\{maxl})$\6
+$\a\{\1\&{if}~(\\{level}\G\\{max\_level})\1$\5
+$\\{panic}(\.{"Too\ many\ levels"});\2$\6
+$\\{maxl}\K\\{level};\2$\6
+$\}$\6
+\&{if}~$(\\{minlen}>\\{maxb})$\6
+$\a\{\1\&{if}~(\\{minlen}\G\\{max\_degree})\1$\5
+$\\{panic}(\.{"Too\ many\ branches"});\2$\6
+$\\{maxb}\K\\{minlen};\2$\6
+$\}$\6
+$\\{profile}[\\{level}][\\{minlen}]\PP;$\6
+\&{if}~$(\\{verbose}>\T{2})\1$\5
+$\\{printf}(\.{"\ branching\ on\ \%s(\%d\))\\n"},\31\\{best\_col}\MG\\{name},%
+\31\\{minlen});\2$\2\6
+$\}$\par
+\U 12.\fi
+
+\M20. \Y\B\4$\X10:Local variables\X\PE{}$\6
+$\&{register}~\&{int}~\\{minlen};$\6
+$\&{register}~\&{int}~ j,\31~ k,\31~ x;$\par
+\fi
+
+\M21. \Y\B\4$\X21:Record solution and $\&{goto}~\\{recover}$\X\EQ{}$\6
+$\a\{\1\\{count}\PP;$\6
+\&{if}~$(\\{verbose})$\6
+$\a\{\1\\{profile}[\\{level}+\T{1}][\T{0}]\PP;$\6
+\&{if}~$(\\{count}\MOD\\{spacing}\E\T{0})$\6
+$\a\{\1\\{printf}(\.{"\%d:\\n"},\31\\{count});$\6
+\&{for}~$( k\K\T{0};$\5
+$ k\Z\\{level};$\5
+$ k\PP)\1$\5
+$\\{print\_row}(\\{choice}[ k]);\2$\2\6
+$\}$\2\6
+$\}$\6
+$\&{goto}~\\{recover};\2$\6
+$\}$\par
+\U 12.\fi
+
+\M22. \Y\B\4$\X22:Print column lengths, to make sure everything has been
+restored\X\EQ{}$\6
+$\a\{\1\\{printf}(\.{"Final\ column\ length\)s"});$\6
+\&{for}~$(\\{cur\_col}\K\\{root}.\\{next};$\5
+$\\{cur\_col}\I\m\AND\\{root};$\5
+$\\{cur\_col}\K\\{cur\_col}\MG\\{next})\1$\5
+$\\{printf}(\.{"\ \%s(\%d)"},\31\\{cur\_col}\MG\\{name},\31\\{cur\_col}\MG%
+\\{len});\2$\6
+$\\{printf}(\.{"\\n"});\2$\6
+$\}$\par
+\U 12.\fi
+
+\M23. \Y\B\4$\X23:Print a profile of the search tree\X\EQ{}$\6
+$\a\{\1\&{double}~\\{tot},\31~\\{subtot};$\7
+$\\{tot}\K\T{1};$\C{ the root node doesn't show up in the profile }\6
+\&{for}~$(\\{level}\K\T{1};$\5
+$\\{level}\Z\\{maxl}+\T{1};$\5
+$\\{level}\PP)$\6
+$\a\{\1\\{subtot}\K\T{0};$\6
+\&{for}~$( k\K\T{0};$\5
+$ k\Z\\{maxb};$\5
+$ k\PP)$\6
+$\a\{\1\\{printf}(\.{"\ \%5.6g"},\31\\{profile}[\\{level}][ k]);$\5
+$\\{subtot}\KK+\\{profile}[\\{level}][ k];\2$\6
+$\}$\6
+$\\{printf}(\.{"\ \%5.15g\ nodes,\ \%.15\)g\ updates\\n"},\31\\{subtot},\31%
+\\{upd\_prof}[\\{level}-\T{1}]);$\5
+$\\{tot}\KK+\\{subtot};\2$\6
+$\}$\6
+$\\{printf}(\.{"Total\ \%.15g\ nodes.\\n\)"},\31\\{tot});\2$\6
+$\}$\par
+\U 1.\fi
+
+\N0 24. Index.
+\fi
+
+
+\inx
+\@m\\{advance}, \[12].
+\@m\\{argc}, \[1].
+\@m\\{argv}, \[1].
+\@m\\{backup}, \[12].
+\@m\\{best\_col}, 12, \[13], 19.
+\@m\\{buf}, \[8], 9, 11.
+\@m\\{buf\_size}, \[8], 9, 11.
+\@m c, \[15], \[16].
+\@m\\{ccol}, \[11].
+\@m\\{choice}, 6, 12, \[14], 21.
+\@m\\{col}, \[3], 6, 11, 12, 15, 16, 17, 18.
+\@m\\{col\_array}, 5, \[8], 9, 11.
+\@h\&{col\_struct}, \[4].
+\@h\&{column}, \[4], 5, 8, 10, 11, 13, 15, 16.
+\@m\\{count}, 1, \[2], 21.
+\@m\\{cover}, 12, \[15], 17.
+\@m\\{cur\_col}, 9, \[10], 11, 19, 22.
+\@m\\{cur\_node}, \[10], 11, 12, 17, 18.
+\@m\\{dd}, \[15], \[16].
+\@m\\{done}, \[12].
+\@m\\{down}, \[3], 6, 9, 11, 12, 15, 16.
+\@m\\{exit}, 1, 9.
+\@m\\{fgets}, 9, 11.
+\@m\\{forward}, \[12].
+\@m\\{fprintf}, 9.
+\@m\\{head}, \[4], 6, 9, 11, 12, 15, 16.
+\@m\\{isspace}, 9, 11.
+\@m j, \[20].
+\@m k, \[6], \[15], \[20].
+\@m l, \[6], \[15], \[16].
+\@m\\{left}, \[3], 11, 16, 18.
+\@m\\{len}, \[4], 6, 9, 11, 15, 16, 19, 22.
+\@m\\{lev}, \[6].
+\@m\\{level}, 12, \[14], 15, 19, 21, 23.
+\@m\\{main}, \[1].
+\@m\\{max\_cols}, \[1], 8, 9.
+\@m\\{max\_degree}, \[1], 2, 19.
+\@m\\{max\_level}, \[1], 2, 14, 19.
+\@m\\{max\_nodes}, \[1], 8, 11, 19.
+\@m\\{maxb}, \[2], 19, 23.
+\@m\\{maxl}, \[2], 19, 23.
+\@m\\{minlen}, 19, \[20].
+\@m\\{name}, \[4], 5, 6, 9, 11, 19, 22.
+\@m\\{next}, \[4], 9, 12, 15, 16, 19, 22.
+\@m\\{nn}, \[15], \[16].
+\@h\&{node}, \[3], 4, 6, 8, 10, 11, 13, 14, 15, 16.
+\@m\\{node\_array}, \[8], 11.
+\@m\\{node\_struct}, \[3].
+\@m p, \[6], \[10].
+\@m\\{panic}, \[9], 11, 19.
+\@m\\{pp}, \[13], 17, 18.
+\@m\\{prev}, \[4], 9, 15, 16.
+\@m\\{primary}, 9, \[10].
+\@m\\{print\_row}, \[6], 12, 21.
+\@m\\{print\_state}, \[6].
+\@m\\{printf}, 1, 6, 12, 19, 21, 22, 23.
+\@m\\{profile}, \[2], 19, 21, 23.
+\@m q, \[6], \[10].
+\@m r, \[15], \[16].
+\@m\\{recover}, \[12], 21.
+\@m\\{right}, \[3], 6, 11, 15, 17, 18.
+\@m\\{root}, \[5], 9, 12, 19, 22.
+\@m\\{row\_start}, \[11].
+\@m\\{rr}, \[15], \[16].
+\@m\\{spacing}, 1, \[2], 21.
+\@m\\{sscanf}, 1.
+\@m\\{stderr}, 9.
+\@m\\{stdin}, 9, 11.
+\@m\\{strcmp}, 11.
+\@m\\{strlen}, 9, 11.
+\@m\\{subtot}, \[23].
+\@m\\{tot}, \[23].
+\@m\\{uncover}, 12, \[16], 18.
+\@m\\{up}, \[3], 9, 11, 15, 16.
+\@m\\{upd\_prof}, \[2], 15, 23.
+\@m\\{updates}, 1, \[2], 15.
+\@m\\{uu}, \[15], \[16].
+\@m\\{verbose}, 1, \[2], 12, 19, 21.
+\@m x, \[20].
+\fin
+\@$\X12:Backtrack through all solutions\X$
+\U 1.
+\@$\X17:Cover all other columns of $\\{cur\_node}$\X$
+\U 12.
+\@$\X2, 8, 14:Global variables\X$
+\U 1.
+\@$\X7:Initialize the data structures\X$
+\U 1.
+\@$\X10, 13, 20:Local variables\X$
+\U 1.
+\@$\X23:Print a profile of the search tree\X$
+\U 1.
+\@$\X22:Print column lengths, to make sure everything has been restored\X$
+\U 12.
+\@$\X9:Read the column names\X$
+\U 7.
+\@$\X11:Read the rows\X$
+\U 7.
+\@$\X21:Record solution and $\&{goto}~\\{recover}$\X$
+\U 12.
+\@$\X19:Set $\\{best\_col}$ to the best column for branching\X$
+\U 12.
+\@$\X6, 15, 16:Subroutines\X$
+\U 1.
+\@$\X3, 4:Type definitions\X$
+\U 1.
+\@$\X18:Uncover all other columns of $\\{cur\_node}$\X$
+\U 12.
+\con
